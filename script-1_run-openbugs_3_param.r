@@ -37,7 +37,7 @@ wd1<- paste(folder.location, "", sep="")
 wd2<- paste(folder.location, "\\model_input\\", setdir, sep="") #wd2<- paste(folder.location, "\\input", sep="")
 wd3<- paste(folder.location, "\\model_output_3_param\\", setdir, sep="") #wd3<- paste(folder.location, "\\output", sep="")
 wd4<- paste(folder.location, "\\model_output_3_param\\", setdir, "\\fitting plots", sep="") #wd4 <- paste(folder.location, "\\output\\fitting plots", sep="")
-dir.create(wd4)
+if(dir.exists(wd4)==FALSE) { dir.create(path = wd4, showWarnings=FALSE, recursive=TRUE) }
 
 
 # set up output table array
@@ -92,7 +92,7 @@ for (fname in filenames)
   # (inspect the main parameters for convergence using bgr diagrams, history, density and autocorrelation)
   setwd(wd1) 
   metab=NULL
-  metab=bugs(data.list,inits,parameters.to.save=params,model.file="Script-2_metab-model.txt", n.thin=1,n.iter=n.iter,n.burnin=n.burnin, n.chains=3, 
+  metab=bugs(data.list,inits,parameters.to.save=params,model.file="Script-2_metab-model_3_param.txt", n.thin=1,n.iter=n.iter,n.burnin=n.burnin, n.chains=3, 
              debug=F)  # <---------- DEBUG ARGUMENT -----------
   
   # print(metab, digits=2) # to inspect results of last "metab" estimate

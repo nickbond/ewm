@@ -1,135 +1,190 @@
-library(dplyr)
 library(lubridate)
 library(ggplot2)
+library(readr)
+library(tidyr)
+library(dplyr)
+#setwd(raw.data.dir)
+#setwd("~/Dropbox/metabolism/raw_data")
 
-logger_cal<-read.csv("/Users/nickbond/Dropbox/metabolism/raw_data/logger_cal_2014_15.csv")
-setwd(raw.data.dir)
 
 #read in light files
-light.files <- list.files(pattern="*light*")
+light.files <- list.files(path=raw.data.dir, pattern=".*light.*\\.csv$", recursive=TRUE, full.names=TRUE)
 
-all.light <-data.frame()
+light.data <-data.frame()
 
 for(i in light.files) {
-  site<-gsub("Site Name \t,","",readLines(i, n=1))
-light.df <- read.table(i,  header=FALSE, skip=8)
-light.df<-data.frame(site,light.df)
-names(light.df)<-c("site", "Scan", "Date", "Time", "raw.values", "cal.values")
-light.df$datetime<-strptime(paste(light.df$Time, light.df$Date, sep=" "), format="%H:%M:%S %d/%m/%Y", tz = "Australia/Brisbane")
-light.df$datetime<-as.POSIXct(light.df$datetime)
-all.light<-rbind_list(all.light, light.df)
+  site <- strsplit(i, split = "_", fixed=TRUE)[[1]][2]
+  
+  light.df <- read.csv(i, header=FALSE, skip=9)
+  names(light.df)<-c("Scan", "Date", "Time", "raw.values", "cal.values")
+  light.df<-data.frame(site=site,light.df)
+  
+  light.df$datetime<-strptime(paste(light.df$Time, light.df$Date, sep=" "), format="%H:%M:%S %d/%m/%Y", tz="UTC")
+  light.df$datetime<-as.POSIXct(light.df$datetime, tz="UTC")
+  minute(light.df$datetime) <- floor(minute(light.df$datetime)/10)*10
+  second(light.df$datetime) <- 0
+  
+  light.df<-light.df %>% select(datetime, raw.values)
+  light.data<-rbind_list(light.data, light.df)
 }
 
-#read in atmos pressure data
-atmo.filename <- list.files(pattern="*atmo*")
-atmo.df <- read.csv(atmo.filename, sep="\t", header=TRUE)
-names(atmo.df)<- c("datetime", "atmo.pressure")
-atmo.df$datetime<-strptime(atmo.df$datetime, format = "%m/%d/%y %H:%M", tz = "Etc/GMT-10")
-atmo.df$datetime<-as.POSIXct(atmo.df$datetime)
-#this is temporary
-print("check atmo dates and formats")
+ #read in atmos pressure data
+atmo.files <- list.files(path=raw.data.dir, pattern=".*atmo.*\\.csv$", recursive=TRUE, full.names=TRUE)
+atmo.data <- data.frame()
 
-atmo.df$datetime<-seq(ymd_hms('2014-08-10 09:00:00'),ymd_hms('2014-09-02 12:00:00'), by = as.difftime(hours(1)), tz= "Etc/GMT-10")
+for(i in atmo.files) {
+  site <- strsplit(i, split="_", fixed=TRUE)[[1]][2]
+  atmo.df <- read.csv(i, skip=2 , header=FALSE)
+  atmo.df <- atmo.df[,c(2:4)]
+  names(atmo.df)<- c("datetime", "atmo.psi", "atmo.tempC")
+
+  atmo.df$datetime<-strptime(atmo.df$datetime, format = "%m/%d/%y %I:%M:%S %p", tz = "UTC")
+  atmo.df$datetime<-as.POSIXct(atmo.df$datetime, tz = "UTC")
+  atmo.data <- bind_rows(atmo.data, atmo.df)
+  atmo.data<-na.omit(atmo.data)
+}
+
+
 
 #read in DO files
-DO.files<-list.files(pattern="\\.dat")
+DO.files<-list.files(path=raw.data.dir, pattern=".*DO.*\\.dat$", recursive=TRUE, full.names = TRUE)
+DO.data<-data.frame()
 
-all.DO.data<-data.frame()
-
-for(i in DO.files) {
-site<-gsub(".dat","",i)
-DO.header <- readLines(i, n=6)
-DO.df<-read.csv(i, skip=6, sep=",")
-names(DO.df)<-c("Date", "Time", "Battery", "tempC", "DO.perc", "DO.meas")
-
-
-DO.df<-data.frame(logger.no=gsub("^.*: ","", DO.header[3]), site=gsub("^.*: ","", DO.header[6]), DO.df, salinity=0)
-DO.df$datetime<-strptime(paste(DO.df$Time, DO.df$Date, sep=" "), format="%H:%M:%S %d/%m/%y", tz = "Etc/GMT-10")
-DO.df$datetime<-as.POSIXct(DO.df$datetime)
-DO.df <- left_join(DO.df, atmo.df, by="datetime")
-DO.df <- left_join(DO.df, light.df, by="datetime")
-
-DO.df<-DO.df %>%
-  mutate(Date=as.Date(datetime, tz="Etc/GMT-10"), 
-         hour=hour(datetime), 
-         Time=format(datetime, format="%H:%M%:%S"), 
-         I = raw.values / 8.771) %>%
-      #   atmo.pressure=atmo.pressure / 0.0680459639) %>%
-  group_by(Date, hour) %>%
-  mutate(atmo.pressure=mean(atmo.pressure, na.rm=TRUE)) %>%
-  ungroup()%>%
- # arrange(datetime)%>%
-  select(datetime, Date, Time, I, tempC, DO.meas, atmo.pressure, salinity) 
-
-
-all.DO.data<-rbind_list(all.DO.data, data.frame(site=site, DO.df))
-
-
-DO.ts<-ts(DO.df$DO.meas, frequency=144, start=c(1,144))
-DO.ts.decomp<-stl(DO.ts, "periodic")
-
-pdf(paste(site, "_DO_ts_decomp.pdf", sep=""), 7, 5)
-plot(DO.ts.decomp)
-dev.off()
-
-
-
-DO.df<-na.omit(DO.df)
-
-DO.df<-DO.df %>%
-  group_by(Date) %>%
-  mutate(n=n())
-  
-DO.df<-filter(DO.df, n==144 | (Date==max(Date) & as.character(Time)=="00:00:00")) %>%
-  select(-datetime, -n)
-
-print(head(DO.df))
-print(tail(DO.df))
-
-
-  
-unique.dates<-unique(DO.df$Date)
-  
-  for (i in 1:(length(unique.dates)-1)) {
-    min.row<-min(which(DO.df$Date==unique.dates[i]))
-    max.row<-max(which(DO.df$Date==unique.dates[i]))
-    subset.data<-DO.df[min.row:(max.row+1),]
-    write.csv(subset.data, file=paste(file.out.dir, site, "_", unique.dates[i],".csv",sep=""), , row.names=F)
-  }
-
-
-}
-
-#look for a file with "logger_cal" in the title in the raw_data directory (this will be month specific)
-# THis file should hae 3 columns named "site", "initial_DO_cal", "final_DO_cal". without the quotes. values in each 
-# column should be self explanatory.
-logger_cal_data<-list.files(pattern="logger_cal")
-
-#read in the logger cal file.
-logger_cal <- read.csv(logger_cal_data)
 
 #calculate the change in saturated DO in the calibration solution from start to finish and subset the file to just the 
 #site and difference column.
-logger_cal <- logger_cal %>% mutate(cal_diff = initial_DO_cal - final_DO_cal) %>% select(site, cal_diff)
+#logger_cal<-read_csv(paste0(folder.location, "logger_cal_2014_15.csv")
+logger_cal<-read_csv("logger_cal_2014_15.csv")
 
-#join the calibration summary file to the logger data files.
 
-all.DO.data <- left_join(all.DO.data, logger_cal, by= "site")
+for(i in DO.files) {
+  site <- strsplit(i, split="_", fixed=TRUE)[[1]][3]
+  DO.header <- readLines(i, n=6)
+  DO.df<-read.csv(i, skip=7, header=FALSE)
+  names(DO.df)<-c("Date", "Time", "Battery", "wtempC", "DO.perc", "DO.meas")
+  
+  
+  DO.df<-data.frame(logger.no=gsub("^.*: ","", DO.header[3]), site=site, DO.df)
+  DO.df$datetime<-strptime(paste(DO.df$Time, DO.df$Date, sep=" "), format="%H:%M:%S %d/%m/%y", tz="UTC")
+  DO.df$datetime<-as.POSIXct(DO.df$datetime, tz="UTC")
+  DO.df <- DO.df %>% select(logger.no, site, datetime, Battery, wtempC, DO.perc, DO.meas)
+  DO.df <- left_join(DO.df, atmo.data, by="datetime")
+  DO.df$atmo.psi <- na.locf(DO.df$atmo.psi, na.rm = FALSE)
+  DO.df$atmo.tempC <- na.locf(object = DO.df$atmo.tempC, na.rm = FALSE)
+  #DO.df$atmo.tempC[is.na(DO.df$atmo.tempC)]<-25
 
-#create a new column (corrected DO for now), which results from 
-#applying the following formula.
-# Corrected DO = Raw DO + (calibration_difference/length of sequence)*(row_position_in_sequence-1)
-#This means the first row is corrected by 0, and the last row corrected by the difference in the 
-#initial and final calibration values. A linear correction is applied between these.
-#
+  DO.df <- left_join(DO.df, light.data, by="datetime")
+  
+  DO.df<-DO.df %>%
+    mutate(Date=as.Date(datetime), 
+           hour=hour(datetime), 
+           Time=format(datetime, format="%H:%M%:%S"), 
+           I = raw.values / 8.771,
+           atmo.mbar = atmo.psi/ 0.0145037738007,
+           atmo.atm = atmo.mbar * 0.00098692326671601)
+   #atmo.mbar= ifelse(is.na(atmo.psi), 1000, atmo.psi / 0.0145037738007))
+  
+  local_cal <- logger_cal[which(logger_cal$sample_date == setdir & match(logger_cal$site,site[1])==TRUE),] %>%
+    mutate(cal_diff = final_DO_cal-initial_DO_cal, salinity=ifelse(is.na(salinity),0,salinity)) %>% 
+    select(site, cal_diff, salinity, outliers_to_exclude)
+  
+  
+  DO.df$site<-as.character(DO.df$site)
+  DO.df <- left_join(DO.df, local_cal, by= "site")
+  
+  DO.df<- DO.df %>%
+    mutate(n=row_number(), ntot=n()) %>%
+  mutate(DO.perc.orig = DO.perc, drift.corrected.DO.perc = (DO.perc - ((cal_diff/ntot)*n-1)), DO.corrected.mgL = ifelse((is.na(atmo.mbar) | is.na(I)),NA,O2.saturation(salinity, wtempC, atmo.mbar, drift.corrected.DO.perc, corrected.DO.only=TRUE)))
+  
+  file.NAs<-local_cal$outliers_to_exclude
+  if (!is.na(file.NAs)) {
+  
+  file.NAs<-as.character(file.NAs[1])
+  DO.df[eval(parse(text=file.NAs)), "DO.corrected.mgL"] <- NA
+  DO.df$DO.corrected.mgL.infilled <- na.spline(DO.df$DO.corrected.mgL, maxgap=10, na.rm=F)
+  
+  } else {
+  
+  DO.df$DO.corrected.mgL.infilled <- DO.df$DO.corrected.mgL
+  }
+  
+    #group_by(Date, hour) %>%
+    #mutate(site=site[1], atmo.pressure=mean(atmo.pressure, na.rm=TRUE)) %>%
+    #ungroup()%>%
+    # arrange(datetime)%>%
+  
+  
 
-all.DO.data <- all.DO.data %>%
-    group_by(site) %>%
-      mutate(DO_orig = DO.meas, DO.meas = DO.meas+((cal_diff/n())*(row_number()-1)))
-      
+  #join the calibration summary file to the logger data files.
 
-ggplot(all.DO.data, aes(x=datetime, y=DO.meas))+geom_point() + facet_grid(site~.)
-ggsave("DO_data_sept_2014_all_sites.pdf")
+  
+  
+  
+  
+  
+  
+  DO.data<-rbind_list(DO.data, select(DO.df, site, datetime, DO.meas, DO.corrected.mgL, DO.corrected.mgL.infilled))
+  
+  
+  DO.ts<-ts(na.omit(DO.df$DO.corrected.mgL.infilled), frequency=144, start=c(1,144))
+  DO.ts.decomp<-stl(DO.ts, "periodic")
+  
+  pdf(paste0(model.output.dir, "DO_ts_decomp_", site, "_", setdir, ".pdf", sep=""), 7, 5)
+  plot(DO.ts.decomp)
+  dev.off()
+  
+  DO.df <-DO.df %>% 
+    select(site, datetime, Date, Time, atmo.atm, I, salinity, wtempC, DO.corrected.mgL.infilled) %>%
+    rename(., DO.meas = DO.corrected.mgL.infilled, tempC = wtempC, atmo.pressure=atmo.atm)
+    
+  
+  
+  DO.df<-na.omit(DO.df)
+  
+#  #Create DOPTO file
+  DO.df %>% 
+    write.csv(., file=paste("combined_data/", setdir, "_", site, "_DO_data.csv", sep=""), row.names=FALSE)
+#  write_csv(., path=paste("combined_data/", setdir, "_", site, "_DO_data.csv", sep=""))
+  
+  #####
+  
+
+  DO.df<-DO.df %>%
+    group_by(Date) %>%
+    mutate(n=n(), row_number=row_number())
+  
+  DO.df<-filter(DO.df, n==144 | (Date==max(Date) & as.character(Time)=="00:00:00")) %>%
+    select(-datetime, -n, -row_number)
+  
+
+  DO.df %>% select(site, Date, Time, I, tempC, DO.meas, atmo.pressure) %>%
+    rename(.,SamplePointName=site, temperatureC = tempC, logDate=Date, logTime=Time, light=I, dissolvedOxygen = DO.meas, atmosPressure=atmo.pressure) %>%
+    mutate(., EvaluationCode=NA, Comments=NA, SampleDate=NA) %>%
+    select(., SamplePointName, SampleDate, logDate, logTime, light, temperatureC, dissolvedOxygen, atmosPressure, EvaluationCode, Comments) %>% 
+  write_csv(., path = paste("upload_data/", setdir, "_", site, "_logger_upload_data.csv", sep=""), na="")
+
+  
+
+#split data up into daily data
+  unique.dates<-unique(DO.df$Date)
+  
+  for (k in 1:(length(unique.dates)-1)) {
+    min.row<-min(which(DO.df$Date==unique.dates[k]))
+    max.row<-max(which(DO.df$Date==unique.dates[k]))
+    subset.data<-DO.df[min.row:(max.row+1),]
+    write.csv(subset.data, file=paste(model.input.dir, "/", site, "_", unique.dates[k],".csv", sep=""), row.names=F)
+  
+  }
+  
+  print(i)
+  
+}
+
+DO.data  %>% select(site, datetime, DO.corrected.mgL, DO.meas, DO.corrected.mgL.infilled) %>% gather(series, reading, -c(site, datetime)) %>% ggplot(., aes(x=datetime, y=reading, colour=series)) + geom_point(size=0.5) + facet_grid(site~.)
+
+ggsave(paste0(model.output.dir,"DO_all_sites_", setdir, ".pdf"))
+
+
 
 
 
