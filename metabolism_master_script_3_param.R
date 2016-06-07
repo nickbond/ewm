@@ -1,5 +1,6 @@
-setwd("/Users/nickbond/Dropbox/metabolism")
-source("R_Scripts/metabolism_helper_functions.R")
+#setwd("/Users/nickbond/Dropbox/metabolism")
+##You need to set the working directory to the year for which you want to run the scripts. All paths are specified relative ot this directory. E.g. setwd("~/Dropbox/metabolism/2016")
+source(file.path("R_Scripts","metabolism_helper_functions.R"))
 
 library(zoo)
 library(stringr)
@@ -10,20 +11,20 @@ library(lubridate)
 library(ggplot2)
 
 
-raw.data.dirs <- list.dirs(path = "raw_data/", full.names = FALSE, recursive=FALSE)
+raw.data.dirs <- list.dirs(path = file.path("raw_data"), full.names = FALSE, recursive=FALSE)
 #d<- raw.data.dirs[7]
 
 for (d in raw.data.dirs) {
   setdir <- d
 
 ####set source and output directories
-raw.data.dir <-paste0("raw_data/", setdir)
+raw.data.dir <-file.path("raw_data", setdir)
 
-model.input.dir <- paste0("model_input/", setdir) 
+model.input.dir <- file.path("model_input", setdir) 
 
 if(dir.exists(model.input.dir)==FALSE) { dir.create(path = model.input.dir, showWarnings=FALSE, recursive=TRUE) }
 
-model.output.dir <- paste0("model_output_3_param/", setdir) 
+model.output.dir <- file.path("model_output_3_param", setdir) 
 
 if(dir.exists(model.output.dir)==FALSE) { dir.create(path = model.output.dir, showWarnings=FALSE, recursive=TRUE) }
 
@@ -32,7 +33,7 @@ if(dir.exists(model.output.dir)==FALSE) { dir.create(path = model.output.dir, sh
 #folder.location <- "//psf/Dropbox/metabolism/"
 #folder.location <- "/Users/nickbond/Dropbox/metabolism/"
 
-combined.data.dir <- "combined_data/"
+combined.data.dir <- file.path("combined_data")
 
 if(dir.exists("combined_data")==FALSE) { dir.create(path = "combined_data", showWarnings=FALSE, recursive=TRUE) }
 
