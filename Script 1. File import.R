@@ -68,11 +68,17 @@ for(i in DO.files) {
 
   DO.df<-data.frame(logger.no=gsub("^.*: ","", DO.header[3]), site=site, DO.df)
   DO.df$datetime<-strptime(paste(DO.df$Time, DO.df$Date, sep=" "), format="%H:%M:%S %d/%m/%y", tz="UTC")
+  #round to the nearest 10 minute block - in case loggers were set up without checking the clock.
+  DO.df$datetime <- strptime("1970-01-01", "%Y-%m-%d", tz="UTC") + floor(as.numeric(DO.df$datetime)/600)*600
   DO.df$datetime<-as.POSIXct(DO.df$datetime, tz="UTC")
   DO.df <- DO.df %>% select(logger.no, site, datetime, Battery, wtempC, DO.perc, DO.meas)
   DO.df <- left_join(DO.df, atmo.data, by="datetime")
-  DO.df$atmo.psi <- na.locf(DO.df$atmo.psi, na.rm = FALSE)
+  #fill in empty rows using locf and nocb
+    DO.df$atmo.psi <- na.locf(DO.df$atmo.psi, na.rm = FALSE)
   DO.df$atmo.tempC <- na.locf(object = DO.df$atmo.tempC, na.rm = FALSE)
+  DO.df$atmo.psi <- na.locf(DO.df$atmo.psi, na.rm = FALSE, fromLast=TRUE)
+  DO.df$atmo.tempC <- na.locf(object = DO.df$atmo.tempC, na.rm = FALSE, fromLast=TRUE)
+  
   #DO.df$atmo.tempC[is.na(DO.df$atmo.tempC)]<-25
 
   DO.df <- left_join(DO.df, light.data, by="datetime")
@@ -145,7 +151,7 @@ for(i in DO.files) {
 
 #  #Create DOPTO file
   DO.df %>%
-    write.csv(., file=paste(file.path("combined_data"), setdir, "_", site, "_DO_data.csv", sep=""), row.names=FALSE)
+    write.csv(., file=file.path("combined_data", paste0(setdir, "_", site, "_DO_data.csv")), row.names=FALSE)
 
   #####
 

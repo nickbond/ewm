@@ -24,7 +24,7 @@ model.input.dir <- file.path("model_input", setdir)
 
 if(dir.exists(model.input.dir)==FALSE) { dir.create(path = model.input.dir, showWarnings=FALSE, recursive=TRUE) }
 
-model.output.dir <- file.path("model_output_3_param", setdir) 
+model.output.dir <- file.path("model_output", setdir) 
 
 if(dir.exists(model.output.dir)==FALSE) { dir.create(path = model.output.dir, showWarnings=FALSE, recursive=TRUE) }
 
@@ -50,28 +50,22 @@ print(d)
 }
 
 
-write.csv(bind_rows(lapply(list.files(pattern=".csv", path = "upload_data/", full.names = TRUE), read.csv)), file="upload_data/all_upload_logger_data.CSV", row.names=FALSE)
+write.csv(bind_rows(lapply(list.files(pattern=".csv", path = file.path("upload_data"), full.names = TRUE), read.csv)), file=file.path("upload_data", "all_upload_logger_data.CSV"), row.names=FALSE)
 
 
 #raw.data.dirs <- list.dirs(path = "/Users/nickbond/Dropbox/metabolism/raw_data/", full.names = FALSE, recursive=FALSE)
-wd<-"U:/Dropbox/metabolism"
-setwd(wd)
 
-model.input.dirs <- list.dirs(path = "raw_data/", full.names = FALSE, recursive=FALSE)
+model.input.dirs <- list.dirs(path = file.path("raw_data"), full.names = FALSE, recursive=FALSE)
 #d<- model.input.dirs[7]
-model.input.dirs<-model.input.dirs[-c(1:3)]
+#model.input.dirs<-model.input.dirs[-c(1:3)]
 
 for (d in model.input.dirs) {
-  setwd(wd)
   
   setdir <- d
   
-  model.input.dir <- paste0("model_input/", setdir) 
+  model.input.dir <- file.path("model_input", setdir) 
 
-  model.output.dir <- paste0("model_output_3_param/", setdir) 
-
-  
-  folder.location <- getwd()
+  model.output.dir <- file.path("model_output", setdir) 
 
   
   source("R_Scripts/script-1_run-openbugs_3_param.R")
@@ -83,19 +77,19 @@ for (d in model.input.dirs) {
 
 all.gpp.data <- data.frame()
 
-folder.location <- "model_output_3_param/"
 
-base.files <- list.files(path = folder.location, pattern = "BASE", recursive=TRUE, full.names = TRUE)
+
+base.files <- list.files(path = "model_output", pattern = "BASE", recursive=TRUE, full.names = TRUE)
 for (i in base.files) {
 
   sample.period<-strsplit(i,split = "/")
   sample.period <- as.numeric(unlist(sample.period))
   sample.period <- unique(sample.period[!is.na(sample.period)])
   
-  data <- read_csv(i)
+  data <- readr::read_csv(i)
   data <- data.frame(sample.period, data)
   data$File <- gsub(".csv","", data$File)
-  data <- separate(data=data, col = File, into = c("site", "date"), sep="_")
+  data <- tidyr::separate(data=data, col = File, into = c("site", "date"), sep="_")
   all.gpp.data <- rbind_list(all.gpp.data, data)
 }
 
@@ -104,7 +98,7 @@ all.gpp.data <- all.gpp.data %>%
   mutate(sample.period = as.character(sample.period))
 
 
-write_csv(all.gpp.data, paste0("all_gpp_data_3_param.csv"))
+readr::write_csv(all.gpp.data, file.path("model_output", "all_gpp_data.csv"))
 
 
 ###
@@ -113,17 +107,15 @@ write_csv(all.gpp.data, paste0("all_gpp_data_3_param.csv"))
 
 
 
-wd<-"/Users/nickbond/Dropbox/metabolism"
-#folder.location <- getwd(wd)
 
-all.gpp.data<-read_csv(paste0(wd, "/all_gpp_data_3_param.csv"))
+all.gpp.data<-readr::read_csv(file.path("model_output",  "all_gpp_data.csv"))
 
-fixed.DO.files <-list.files(paste0(wd, "/combined_data"), pattern = "DO_data.csv", full.names = TRUE)
+fixed.DO.files <-list.files(path="combined_data", pattern = "DO_data.csv", full.names = TRUE)
 
 fixed.DO.data <- data.frame()
 for(i in fixed.DO.files) {
-  fixed.DO <- read_csv(i, col_types = "cTDtddddd")
-  fixed.DO.data <- bind_rows(fixed.DO.data, fixed.DO)
+  fixed.DO <- readr::read_csv(i, col_types = "cTDtddddd")
+  fixed.DO.data <- dplyr::bind_rows(fixed.DO.data, fixed.DO)
 }
 
 fixed.DO.data <- fixed.DO.data %>%
@@ -154,7 +146,7 @@ all.gpp.data <- left_join(all.hydro.data, all.gpp.data[1:1130,], by = c('date'='
 all.gpp.data <- left_join(all.gpp.data, fixed.DO.data, by = c('sitecode.2014'='site', 'date' = 'Date'))
 
 
-write_csv(filter(all.gpp.data, !is.na(GPP.mean)), path = paste0(wd, "/all_gpp_data_combined_3_param.csv"))
+write_csv(filter(all.gpp.data, !is.na(GPP.mean)), path = paste0(wd, "/all_gpp_data_combined.csv"))
 
 
 #write base output file
